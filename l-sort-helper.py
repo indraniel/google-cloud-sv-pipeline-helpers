@@ -33,10 +33,11 @@ def cd(path=None, cleanup=None):
 
 @contextlib.contextmanager
 def tempdir():
-    dirpath = tempfile.mkdtemp()
+    dirpath = '/mnt/disks/scratch/l-sort'
 
     def cleanup():
-        shutil.rmtree(dirpath)
+        pass
+        #shutil.rmtree(dirpath)
 
     with cd(path=dirpath, cleanup=cleanup):
         yield dirpath
@@ -46,19 +47,18 @@ def run(cmd):
         cmd,
         shell=True,
         executable='/bin/bash',
-        env=os.environ,
-        stdout=sp.PIPE,
-        stderr=sp.PIPE
+        env=os.environ
     )
     p.wait()
-    res = p.stdout.read().strip().decode("utf-8", "replace")
-    err = p.stderr.read().strip().decode("utf-8", "replace")
-    log("res: {} | err: {}".format(res, err))
+    import pdb; pdb.set_trace()
+    #res = p.stdout.read().strip().decode("utf-8", "replace")
+    #err = p.stderr.read().strip().decode("utf-8", "replace")
+    #log("res: {} | err: {}".format(res, err))
 
     if p.returncode != 0:
         raise RuntimeError(cmd)
 
-    return res
+    #return res
 
 def download_blob(storage_client, vcf):
     bucket_name = os.path.dirname(vcf).split('/')[2]
@@ -66,9 +66,9 @@ def download_blob(storage_client, vcf):
     basefile = os.path.basename(vcf)
     dstpath = os.path.join(os.getcwd(), basefile)
 
-    bucket = storage_client.get_bucket(bucket_name)
-    blob = bucket.blob(source_blob_name)
-    blob.download_to_filename(dstpath)
+    #bucket = storage_client.get_bucket(bucket_name)
+    #blob = bucket.blob(source_blob_name)
+    #blob.download_to_filename(dstpath)
 
     return dstpath
 
@@ -88,9 +88,9 @@ def download_vcfs(storage_client, outfile, input_vcfs):
         # needed by htslib/bcftools to directly read off the bucket
         #token = get_access_token()
         #os.environ['GCS_OAUTH_TOKEN'] = token
-        log("Downloading input vcf [ {} | {} ] : {}".format(i, total, vcf))
+        #log("Downloading input vcf [ {} | {} ] : {}".format(i, total, vcf))
         vcfpath = download_blob(storage_client, vcf)
-        log("\tDownloaded vcf to: {}".format(vcfpath))
+        #log("\tDownloaded vcf to: {}".format(vcfpath))
         locally_downloaded_vcfs.append(vcfpath)
 
     return locally_downloaded_vcfs
@@ -118,6 +118,20 @@ def get_access_token():
     access_token = r.json()['access_token']
     return access_token
 
+def l_sort(master_vcf_file):
+    python = '/home/idas/svtools/venv2/bin/python'
+    svtools = '/home/idas/svtools/venv2/bin/svtools'
+    tmp_dir = '/mnt/disks/scratch/l-sort/tmp'
+    cmd = '{python} {svtools} lsort -f /mnt/disks/scratch/l-sort/{vcf_list} -t {tmp_dir}'.format(
+        python=python,
+        svtools=svtools,
+        vcf_list=master_vcf_file,
+        tmp_dir=tmp_dir
+    )
+    log("starting lsort: {}".format(cmd))
+    run(cmd)
+    log("finished lsort: {}".format(cmd))
+
 def make_arg_parser():
     parser = argparse.ArgumentParser()
     parser.add_argument(
@@ -136,8 +150,11 @@ def main():
     sc = activate_google_storage_client()
     input_vcfs = get_input_vcfs(args.input)
     with tempdir() as dirpath:
+        log("Using tmp directory: {}".format(dirpath))
         vcfs = download_vcfs(sc, args.output, input_vcfs)
-        # TODO: run_lsort(vcfs)
+        with open('master-vcf-list.txt', 'w') as f:
+            print("\n".join(vcfs), file=f)
+        l_sort('master-vcf-list.txt')
 
 if __name__ == "__main__":
     main()
